@@ -34,6 +34,14 @@ async function run() {
     const usersCollection = db.collection("users");
     const tuitionsCollection = db.collection("tuitions");
 
+    //! for accessing user role 
+     app.get("/users/:email/role", async (req, res) => {
+      const email = req.params.email;
+      const query = { email };
+      const user = await usersCollection.findOne(query);
+      res.send({ role: user?.role });
+    });
+
     app.post("/users", async (req, res) => {
       const user = req.body;
       user.created_at = new Date();
