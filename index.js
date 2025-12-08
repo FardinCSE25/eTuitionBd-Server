@@ -6,6 +6,20 @@ const app = express();
 const { MongoClient, ServerApiVersion } = require("mongodb");
 const port = process.env.PORT || 5000;
 
+
+const admin = require("firebase-admin");
+
+// const serviceAccount = require("./etuitionbd-a1c8c-firebase-adminsdk-fbsvc-d84f5ccea7.json");
+
+const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString(
+  "utf8"
+);
+const serviceAccount = JSON.parse(decoded);
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+
 app.use(express.json());
 app.use(
   cors({
@@ -14,6 +28,21 @@ app.use(
     credentials: true,
   })
 );
+
+const verifyFirebaseToken = async (req, res, next) => {
+  const token = req.headers.authorization;
+  if (!token) {
+    return res.status(401).send({ message: "Unauthorized access" });
+  }
+  try {
+    const tokenId = token.split(" ")[1];
+    const decoded = await admin.auth().verifyIdToken(tokenId);
+    req.decoded_email = decoded.email;
+    next();
+  } catch (error) {
+    return res.status(401).send({ message: "Unauthorized Access" });
+  }
+};
 
 const uri = `mongodb+srv://${process.env.DB_User}:${process.env.DB_Password}@users.xgs9b3y.mongodb.net/?appName=Users`;
 
@@ -55,12 +84,17 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/tuitions", async (req, res) => {
+    app.get("/tuitions", verifyFirebaseToken, async (req, res) => {
       const query = {};
       const { email } = req.query;
       if (email) {
         query.StudentEmail = email;
       }
+
+      if (email !== req.decoded_email) {
+        return res.status(403).send({ message: "Forbidden Access" });
+      }
+
       const cursor = tuitionsCollection.find(query).sort({ created_at: -1 });
       const result = await cursor.toArray();
       res.send(result);
