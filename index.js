@@ -3,7 +3,7 @@ require("dotenv").config();
 const cors = require("cors");
 const app = express();
 
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const port = process.env.PORT || 5000;
 
 
@@ -109,7 +109,7 @@ async function run() {
     });
 
     app.patch(
-      "/riders/:id",
+      "/tuitions/:id",
       verifyFirebaseToken,
       async (req, res) => {
         const status = req.body.status;
