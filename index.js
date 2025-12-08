@@ -22,7 +22,7 @@ admin.initializeApp({
 app.use(express.json());
 app.use(
   cors({
-    origin: ["http://localhost:5173", "https://etuitionbd-a1c8c.web.app"],
+    origin: ["http://localhost:5173", "https://etuitionbd-a1c8c.web.app", "http://localhost:5174"],
     methods: ["GET", "POST", "DELETE", "PATCH", "PUT"],
     credentials: true,
   })
@@ -30,6 +30,8 @@ app.use(
 
 const verifyFirebaseToken = async (req, res, next) => {
   const token = req.headers.authorization;
+  console.log(token);
+  
   if (!token) {
     return res.status(401).send({ message: "Unauthorized access" });
   }
@@ -70,11 +72,12 @@ async function run() {
       res.send({ role: user?.role });
     });
 
-    app.get("/users", async (req, res) => {
+    app.get("/users", verifyFirebaseToken, async (req, res) => {
       const cursor = usersCollection.find().sort({ created_at: -1 });
       const result = await cursor.toArray();
       res.send(result);
     });
+
 
     app.post("/users", verifyFirebaseToken, async (req, res) => {
       const user = req.body;
