@@ -6,7 +6,6 @@ const app = express();
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const port = process.env.PORT || 5000;
 
-
 const admin = require("firebase-admin");
 
 // const serviceAccount = require("./etuitionbd-a1c8c-firebase-adminsdk-fbsvc-d84f5ccea7.json");
@@ -17,7 +16,7 @@ const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString(
 const serviceAccount = JSON.parse(decoded);
 
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
+  credential: admin.credential.cert(serviceAccount),
 });
 
 app.use(express.json());
@@ -63,15 +62,21 @@ async function run() {
     const usersCollection = db.collection("users");
     const tuitionsCollection = db.collection("tuitions");
 
-    //! for accessing user role 
-     app.get("/users/:email/role", async (req, res) => {
+    //! for accessing user role
+    app.get("/users/:email/role", async (req, res) => {
       const email = req.params.email;
       const query = { email };
       const user = await usersCollection.findOne(query);
       res.send({ role: user?.role });
     });
 
-    app.post("/users", async (req, res) => {
+    app.get("/users", async (req, res) => {
+      const cursor = usersCollection.find().sort({ created_at: -1 });
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
+    app.post("/users", verifyFirebaseToken, async (req, res) => {
       const user = req.body;
       user.created_at = new Date();
       const email = user.email;
@@ -81,6 +86,29 @@ async function run() {
         return res.send({ message: "User exists" });
       }
       const result = await usersCollection.insertOne(user);
+      res.send(result);
+    });
+
+    // ! Delete User
+    app.delete("/users/:id", verifyFirebaseToken, async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await usersCollection.deleteOne(query);
+      res.send(result);
+    });
+
+    // ! user's role change
+    app.patch("/users/:id/role", verifyFirebaseToken, async (req, res) => {
+      const id = req.params.id;
+      const roleInfo = req.body;
+      console.log("Received Body:", roleInfo);
+      const query = { _id: new ObjectId(id) };
+      const updatedData = {
+        $set: {
+          role: roleInfo.role,
+        },
+      };
+      const result = await usersCollection.updateOne(query, updatedData);
       res.send(result);
     });
 
@@ -108,23 +136,19 @@ async function run() {
       res.send(result);
     });
 
-    app.patch(
-      "/tuitions/:id",
-      verifyFirebaseToken,
-      async (req, res) => {
-        const status = req.body.status;
-        const id = req.params.id;
-        const query = { _id: new ObjectId(id) };
-        const updatedDoc = {
-          $set: {
-            status: status,
-          },
-        };
+    app.patch("/tuitions/:id", verifyFirebaseToken, async (req, res) => {
+      const status = req.body.status;
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const updatedDoc = {
+        $set: {
+          status: status,
+        },
+      };
 
-        const result = await tuitionsCollection.updateOne(query, updatedDoc);
-        res.send(result);
-      }
-    );
+      const result = await tuitionsCollection.updateOne(query, updatedDoc);
+      res.send(result);
+    });
 
     // Send a ping to confirm a successful connection
     // await client.db("admin").command({ ping: 1 });
