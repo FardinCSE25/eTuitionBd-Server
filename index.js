@@ -34,7 +34,7 @@ app.use(
 
 const verifyFirebaseToken = async (req, res, next) => {
   const token = req.headers.authorization;
-  console.log(token);
+  // console.log(token);
 
   if (!token) {
     return res.status(401).send({ message: "Unauthorized access" });
@@ -118,7 +118,19 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/tuitions", async (req, res) => {
+    // ! For all tuitions page (Approved tuitions)
+    app.get("/all-tuitions", async (req, res) => {
+      const { status } = req.query;
+      const query = {};
+      if (status) {
+        query.status = status;
+      }
+      const cursor = tuitionsCollection.find(query).sort({ created_at: -1 });
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
+    app.get("/tuitions", verifyFirebaseToken, async (req, res) => {
       const { email, status } = req.query;
       const query = {};
       if (email && status) {
@@ -138,6 +150,24 @@ async function run() {
       tuition.status = "Pending";
       tuition.created_at = new Date();
       const result = await tuitionsCollection.insertOne(tuition);
+      res.send(result);
+    });
+
+    app.patch("/tuitions/:id/update", async (req, res) => {
+      const id = req.params.id;
+      const updatedData = req.body;
+
+      const query = { _id: new ObjectId(id) };
+      const updateDoc = {
+        $set: {
+          studentName: updatedData.studentName,
+          subject: updatedData.subject,
+          class: updatedData.class,
+          budget: updatedData.budget,
+        },
+      };
+
+      const result = await tuitionsCollection.updateOne(query, updateDoc);
       res.send(result);
     });
 
