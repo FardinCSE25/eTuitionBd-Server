@@ -91,9 +91,9 @@ async function run() {
         query.StudentEmail = email;
       }
 
-      if (email !== req.decoded_email) {
-        return res.status(403).send({ message: "Forbidden Access" });
-      }
+      // if (email !== req.decoded_email) {
+      //   return res.status(403).send({ message: "Forbidden Access" });
+      // }
 
       const cursor = tuitionsCollection.find(query).sort({ created_at: -1 });
       const result = await cursor.toArray();
@@ -107,6 +107,24 @@ async function run() {
       const result = await tuitionsCollection.insertOne(tuition);
       res.send(result);
     });
+
+    app.patch(
+      "/riders/:id",
+      verifyFirebaseToken,
+      async (req, res) => {
+        const status = req.body.status;
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+        const updatedDoc = {
+          $set: {
+            status: status,
+          },
+        };
+
+        const result = await tuitionsCollection.updateOne(query, updatedDoc);
+        res.send(result);
+      }
+    );
 
     // Send a ping to confirm a successful connection
     // await client.db("admin").command({ ping: 1 });
