@@ -130,6 +130,17 @@ async function run() {
       res.send(result);
     });
 
+    app.get("/recent-tuitions", async (req, res) => {
+      const { status } = req.query;
+      const query = {};
+       if (status) {
+        query.status = status;
+      }
+      const cursor = tuitionsCollection.find(query).sort({ created_at: -1 }).limit(6);
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
     app.get("/tuitions", verifyFirebaseToken, async (req, res) => {
       const { email, status } = req.query;
       const query = {};
