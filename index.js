@@ -22,7 +22,11 @@ admin.initializeApp({
 app.use(express.json());
 app.use(
   cors({
-    origin: ["http://localhost:5173", "https://etuitionbd-a1c8c.web.app", "http://localhost:5174"],
+    origin: [
+      "http://localhost:5173",
+      "https://etuitionbd-a1c8c.web.app",
+      "http://localhost:5174",
+    ],
     methods: ["GET", "POST", "DELETE", "PATCH", "PUT"],
     credentials: true,
   })
@@ -31,7 +35,7 @@ app.use(
 const verifyFirebaseToken = async (req, res, next) => {
   const token = req.headers.authorization;
   console.log(token);
-  
+
   if (!token) {
     return res.status(401).send({ message: "Unauthorized access" });
   }
@@ -72,12 +76,11 @@ async function run() {
       res.send({ role: user?.role });
     });
 
-    app.get("/users", verifyFirebaseToken, async (req, res) => {
+    app.get("/users", async (req, res) => {
       const cursor = usersCollection.find().sort({ created_at: -1 });
       const result = await cursor.toArray();
       res.send(result);
     });
-
 
     app.post("/users", verifyFirebaseToken, async (req, res) => {
       const user = req.body;
@@ -115,17 +118,16 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/tuitions", verifyFirebaseToken, async (req, res) => {
+    app.get("/tuitions", async (req, res) => {
+      const { email, status } = req.query;
       const query = {};
-      const { email } = req.query;
-      if (email) {
-        query.StudentEmail = email;
+      if (email && status) {
+        query.studentEmail = email;
+        query.status = status;
       }
-
       // if (email !== req.decoded_email) {
       //   return res.status(403).send({ message: "Forbidden Access" });
       // }
-
       const cursor = tuitionsCollection.find(query).sort({ created_at: -1 });
       const result = await cursor.toArray();
       res.send(result);
@@ -148,8 +150,14 @@ async function run() {
           status: status,
         },
       };
-
       const result = await tuitionsCollection.updateOne(query, updatedDoc);
+      res.send(result);
+    });
+
+    app.delete("/tuitions/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await tuitionsCollection.deleteOne(query);
       res.send(result);
     });
 
