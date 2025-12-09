@@ -67,6 +67,7 @@ async function run() {
     const db = client.db("eTuitionBd-db");
     const usersCollection = db.collection("users");
     const tuitionsCollection = db.collection("tuitions");
+    const applicationsCollection = db.collection("applications");
 
     //! for accessing user role
     app.get("/users/:email/role", async (req, res) => {
@@ -82,7 +83,7 @@ async function run() {
       res.send(result);
     });
 
-    app.post("/users", verifyFirebaseToken, async (req, res) => {
+    app.post("/users", async (req, res) => {
       const user = req.body;
       user.created_at = new Date();
       const email = user.email;
@@ -133,21 +134,27 @@ async function run() {
     app.get("/recent-tuitions", async (req, res) => {
       const { status } = req.query;
       const query = {};
-       if (status) {
+      if (status) {
         query.status = status;
       }
-      const cursor = tuitionsCollection.find(query).sort({ created_at: -1 }).limit(6);
+      const cursor = tuitionsCollection
+        .find(query)
+        .sort({ created_at: -1 })
+        .limit(6);
       const result = await cursor.toArray();
       res.send(result);
     });
 
-      app.get("/recent-tutors", async (req, res) => {
+    app.get("/recent-tutors", async (req, res) => {
       const { role } = req.query;
       const query = {};
-       if (role) {
+      if (role) {
         query.role = role;
       }
-      const cursor = usersCollection.find(query).sort({ created_at: -1 }).limit(6);
+      const cursor = usersCollection
+        .find(query)
+        .sort({ created_at: -1 })
+        .limit(6);
       const result = await cursor.toArray();
       res.send(result);
     });
@@ -171,10 +178,40 @@ async function run() {
       const tuition = req.body;
       tuition.status = "Pending";
       tuition.created_at = new Date();
+      // tuition._id = id
+      //  const tuitionExists = await tuitionsCollection.findOne({ _id: new ObjectId(id) });
+
+      // if (tuitionExists) {
+      //   return res.send({ message: "tuition exists" });
+      // }
       const result = await tuitionsCollection.insertOne(tuition);
       res.send(result);
     });
 
+    // ! for showing the applications of the tuition to specific tutor
+    app.get("/tuitions/application", async (req, res) => {
+      const { email } = req.query;
+      const query = {};
+      if (email) {
+        query.tutorEmail = email;
+      }
+      const result = await applicationsCollection
+        .find(query)
+        .sort({ applied_at: -1 })
+        .toArray();
+      res.send(result);
+    });
+
+    // ! for showing the applied tutors list to the student
+    app.get("/tuitions/:email/applied", async (req, res) => {
+      const email = req.params.email;
+      const query = { studentEmail: email };
+      query.approvalStatus = { $in: ["Pending", "Approved"] };
+      const result = await tuitionsCollection.find(query).toArray();
+      res.send(result);
+    });
+
+    // ! for students to update their tuition information
     app.patch("/tuitions/:id/update", async (req, res) => {
       const id = req.params.id;
       const updatedData = req.body;
@@ -193,6 +230,84 @@ async function run() {
       res.send(result);
     });
 
+    // ! for application of tutor for a specific tuition
+    app.patch("/tuitions/apply", async (req, res) => {
+      const {
+        tuition,
+        name,
+        email,
+        qualification,
+        experience,
+        expectedSalary,
+        photoURL,
+      } = req.body;
+
+      const query = { _id: new ObjectId(tuition._id) };
+      const appliedData = {
+        $set: {
+          tutorName: name,
+          tutorEmail: email,
+          tutorQualification: qualification,
+          tutorExperience: experience,
+          tutorExpectedSalary: expectedSalary,
+          approvalStatus: "Pending",
+          applied_at: new Date(),
+          tutorPhoto: photoURL,
+        },
+      };
+
+      const applicationData = {
+        tutorEmail: email,
+        tutorName: name,
+        class: tuition.class,
+        subject: tuition.subject,
+        tutorQualification: qualification,
+        tutorExperience: experience,
+        tutorExpectedSalary: expectedSalary,
+        studentEmail: tuition.studentEmail,
+        studentName: tuition.studentName,
+        location: tuition.location,
+        applicationStatus: "Pending",
+        applied_at: new Date(),
+      };
+
+      const result = await tuitionsCollection.updateOne(query, appliedData);
+      const applicationResult = await applicationsCollection.insertOne(
+        applicationData
+      );
+      res.send(result);
+    });
+
+    app.patch("/tuitions/reject", async (req, res) => {
+      const app = req.body;
+      const id = app._id;
+      const query = { _id: new ObjectId(id) };
+      const tuitionUpdatedData = {
+        $set: {
+          approvalStatus: "Rejected",
+        },
+      };
+      const result = await tuitionsCollection.updateOne(
+        query,
+        tuitionUpdatedData
+      );
+      const appQuery = {
+        studentEmail: app.studentEmail,
+        tutorEmail: app.tutorEmail
+      };
+      const tutorUpdatedData = {
+        $set: {
+          applicationStatus: "Rejected",
+        },
+      };
+      const tutorResult = await applicationsCollection.updateOne(
+        appQuery,
+        tutorUpdatedData
+      );
+      res.send(result);
+    });
+
+    // ! for approval of specific tuition from admin
     app.patch("/tuitions/:id", verifyFirebaseToken, async (req, res) => {
       const status = req.body.status;
       const id = req.params.id;
@@ -210,6 +325,28 @@ async function run() {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await tuitionsCollection.deleteOne(query);
+      res.send(result);
+    });
+
+    app.patch("/applications/:id/update", async (req, res) => {
+      const id = req.params.id;
+      const { qualification, experience, salary } = req.body;
+      const query = { _id: new ObjectId(id) };
+      const updatedData = {
+        $set: {
+          tutorQualification: qualification,
+          tutorExperience: experience,
+          tutorExpectedSalary: salary,
+        },
+      };
+      const result = await applicationsCollection.updateOne(query, updatedData);
+      res.send(result);
+    });
+
+    app.delete("/applications/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await applicationsCollection.deleteOne(query);
       res.send(result);
     });
 
