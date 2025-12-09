@@ -141,6 +141,17 @@ async function run() {
       res.send(result);
     });
 
+      app.get("/recent-tutors", async (req, res) => {
+      const { role } = req.query;
+      const query = {};
+       if (role) {
+        query.role = role;
+      }
+      const cursor = usersCollection.find(query).sort({ created_at: -1 }).limit(6);
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
     app.get("/tuitions", verifyFirebaseToken, async (req, res) => {
       const { email, status } = req.query;
       const query = {};
