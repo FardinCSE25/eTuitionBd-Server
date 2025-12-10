@@ -2,6 +2,7 @@ const express = require("express");
 require("dotenv").config();
 const cors = require("cors");
 const app = express();
+const stripe = require("stripe")(process.env.Stripe_Secret);
 
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const port = process.env.PORT || 5000;
@@ -68,6 +69,7 @@ async function run() {
     const usersCollection = db.collection("users");
     const tuitionsCollection = db.collection("tuitions");
     const applicationsCollection = db.collection("applications");
+    const paymentsCollection = db.collection("payments");
 
     //! for accessing user role
     app.get("/users/:email/role", async (req, res) => {
@@ -78,7 +80,12 @@ async function run() {
     });
 
     app.get("/users", async (req, res) => {
-      const cursor = usersCollection.find().sort({ created_at: -1 });
+      const { email } = req.query;
+      const query = {};
+      if (email) {
+        query.email = email;
+      }
+      const cursor = usersCollection.find(query).sort({ created_at: -1 });
       const result = await cursor.toArray();
       res.send(result);
     });
@@ -93,6 +100,25 @@ async function run() {
         return res.send({ message: "User exists" });
       }
       const result = await usersCollection.insertOne(user);
+      res.send(result);
+    });
+
+    app.patch("/users", async (req, res) => {
+      const { name, photo } = req.body;
+      const { email } = req.query;
+      const query = {};
+      if (email) {
+        query.email = email;
+      }
+
+      const updatedUserData = {
+        $set: {
+          displayName: name,
+          photoURL: photo,
+        },
+      };
+
+      const result = await usersCollection.updateOne(query, updatedUserData);
       res.send(result);
     });
 
@@ -178,12 +204,13 @@ async function run() {
       const tuition = req.body;
       tuition.status = "Pending";
       tuition.created_at = new Date();
-      // tuition._id = id
-      //  const tuitionExists = await tuitionsCollection.findOne({ _id: new ObjectId(id) });
+      const tuitionExists = await tuitionsCollection.findOne({
+        _id: new ObjectId(tuition._id),
+      });
 
-      // if (tuitionExists) {
-      //   return res.send({ message: "tuition exists" });
-      // }
+      if (tuitionExists) {
+        return res.send({ message: "tuition exists" });
+      }
       const result = await tuitionsCollection.insertOne(tuition);
       res.send(result);
     });
@@ -293,7 +320,7 @@ async function run() {
       );
       const appQuery = {
         studentEmail: app.studentEmail,
-        tutorEmail: app.tutorEmail
+        tutorEmail: app.tutorEmail,
       };
       const tutorUpdatedData = {
         $set: {
@@ -347,6 +374,114 @@ async function run() {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await applicationsCollection.deleteOne(query);
+      res.send(result);
+    });
+
+    // ! for Payment Checkout page
+    app.post("/create-checkout-session", async (req, res) => {
+      const paymentInfo = req.body;
+      const amount = parseInt(paymentInfo.fee) * 100;
+      const session = await stripe.checkout.sessions.create({
+        line_items: [
+          {
+            // Provide the exact Price ID (for example, price_1234) of the product you want to sell
+            price_data: {
+              currency: "bdt",
+              unit_amount: amount,
+              product_data: {
+                name: `Pay the tuition fee for ${paymentInfo.subject}`,
+              },
+            },
+            quantity: 1,
+          },
+        ],
+        customer_email: paymentInfo.studentEmail,
+        mode: "payment",
+        metadata: {
+          tuitionId: paymentInfo.tuitionId,
+          subject: paymentInfo.subject,
+          tutorEmail: paymentInfo.tutorEmail,
+        },
+        success_url: `${process.env.Domain_URL}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.Domain_URL}/dashboard/payment-cancelled`,
+      });
+      res.send({ url: session.url });
+    });
+
+    app.patch("/payment-success", async (req, res) => {
+      const sessionId = req.query.session_id;
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      console.log(session);
+
+      const transactionId = session.payment_intent;
+      const query = { transactionId: transactionId };
+      const paymentExist = await paymentsCollection.findOne(query);
+      if (paymentExist) {
+        return res.send({
+          message: "payment already done",
+          transactionId,
+        });
+      }
+
+      if (session.payment_status === "paid") {
+        const id = session.metadata.tuitionId;
+        const query = { _id: new ObjectId(id) };
+        const update = {
+          $set: {
+            paymentStatus: "Paid",
+            approvalStatus: "Approved",
+          },
+        };
+        const result = await tuitionsCollection.updateOne(query, update);
+        const paymentHistory = {
+          amount: session.amount_total / 100,
+          studentEmail: session.customer_email,
+          tutorEmail: session.metadata.tutorEmail,
+          tuitionId: session.metadata.tuitionId,
+          subject: session.metadata.subject,
+          transactionId: session.payment_intent,
+          paymentStatus: session.payment_status,
+          paidAt: new Date(),
+          transactionId: session.payment_intent,
+        };
+
+        if (session.payment_status === "paid") {
+          const resultPayment = await paymentsCollection.insertOne(
+            paymentHistory
+          );
+          const tutorQuery = {
+            studentEmail: session.customer_email,
+            tutorEmail: session.metadata.tutorEmail,
+            subject: session.metadata.subject,
+          };
+          const tutorUpdatedData = {
+            $set: {
+              applicationStatus: "Approved",
+            },
+          };
+          const tutorResult = await applicationsCollection.updateOne(
+            tutorQuery,
+            tutorUpdatedData
+          );
+          res.send({
+            transactionId: session.payment_intent,
+            updatedApplication: tutorResult,
+          });
+        }
+      }
+    });
+
+    app.get("/payments", verifyFirebaseToken, async (req, res) => {
+      const email = req.query.email;
+      const query = {};
+      if (email) {
+        query.studentEmail = email;
+      }
+      if (email !== req.decoded_email) {
+        return res.status(403).send({ message: "Forbidden Access" });
+      }
+      const cursor = paymentsCollection.find(query).sort({ paidAt: -1 });
+      const result = await cursor.toArray();
       res.send(result);
     });
 
