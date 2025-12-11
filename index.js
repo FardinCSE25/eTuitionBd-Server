@@ -167,7 +167,7 @@ async function run() {
 
     // ! For all tuitions page (Approved tuitions)
     app.get("/all-tuitions", async (req, res) => {
-      const { status, search } = req.query;
+      const { status, search, limit = 0, skip = 0 } = req.query;
       const query = {};
       if (status) {
         query.status = status;
@@ -175,12 +175,18 @@ async function run() {
       if (search) {
         query.$or = [
           { subject: { $regex: search, $options: "i" } },
-          { location: { $regex: search, $options: "i" } },
+          { class: { $regex: search, $options: "i" } },
         ];
       }
-      const cursor = tuitionsCollection.find(query).sort({ created_at: -1 });
+
+      const count = await tuitionsCollection.countDocuments();
+      const cursor = tuitionsCollection
+        .find(query)
+        .limit(Number(limit))
+        .skip(Number(skip))
+        .sort({ created_at: -1 });
       const result = await cursor.toArray();
-      res.send(result);
+      res.send({ result, count });
     });
 
     app.get("/recent-tuitions", async (req, res) => {
