@@ -71,6 +71,26 @@ async function run() {
     const applicationsCollection = db.collection("applications");
     const paymentsCollection = db.collection("payments");
 
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.decoded_email;
+      const query = { email };
+      const user = await usersCollection.findOne(query);
+      if (!user || user.role !== "Admin") {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+      next();
+    };
+
+    const verifyTutor = async (req, res, next) => {
+      const email = req.decoded_email;
+      const query = { email };
+      const user = await usersCollection.findOne(query);
+      if (!user || user.role !== "Tutor") {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+      next();
+    };
+
     //! for accessing user role
     app.get("/users/:email/role", async (req, res) => {
       const email = req.params.email;
@@ -147,10 +167,16 @@ async function run() {
 
     // ! For all tuitions page (Approved tuitions)
     app.get("/all-tuitions", async (req, res) => {
-      const { status } = req.query;
+      const { status, search } = req.query;
       const query = {};
       if (status) {
         query.status = status;
+      }
+      if (search) {
+        query.$or = [
+          { subject: { $regex: search, $options: "i" } },
+          { location: { $regex: search, $options: "i" } },
+        ];
       }
       const cursor = tuitionsCollection.find(query).sort({ created_at: -1 });
       const result = await cursor.toArray();
@@ -192,6 +218,8 @@ async function run() {
         query.studentEmail = email;
         query.status = status;
       }
+      console.log(email);
+
       // if (email !== req.decoded_email) {
       //   return res.status(403).send({ message: "Forbidden Access" });
       // }
@@ -217,10 +245,13 @@ async function run() {
 
     // ! for showing the applications of the tuition to specific tutor
     app.get("/tuitions/application", async (req, res) => {
-      const { email } = req.query;
+      const { email, status } = req.query;
       const query = {};
       if (email) {
         query.tutorEmail = email;
+      }
+      if (status) {
+        query.applicationStatus = status;
       }
       const result = await applicationsCollection
         .find(query)
@@ -471,6 +502,19 @@ async function run() {
       }
     });
 
+    app.get("/all-payments", verifyFirebaseToken, async (req, res) => {
+      const email = req.query.email;
+      const query = {};
+
+      if (email !== req.decoded_email) {
+        return res.status(403).send({ message: "Forbidden Access" });
+      }
+      const cursor = paymentsCollection.find(query).sort({ paidAt: -1 });
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
+    // ! for showing the payment history to the student
     app.get("/payments", verifyFirebaseToken, async (req, res) => {
       const email = req.query.email;
       const query = {};
@@ -482,6 +526,76 @@ async function run() {
       }
       const cursor = paymentsCollection.find(query).sort({ paidAt: -1 });
       const result = await cursor.toArray();
+      res.send(result);
+    });
+
+    // ! for showing the payment history to the tutor
+    app.get("/payments/tutor", verifyFirebaseToken, async (req, res) => {
+      const email = req.query.email;
+      const query = {};
+      if (email) {
+        query.tutorEmail = email;
+      }
+      if (email !== req.decoded_email) {
+        return res.status(403).send({ message: "Forbidden Access" });
+      }
+
+      res.send(result[0] || { totalAmount: 0, count: 0 });
+      const cursor = paymentsCollection.find(query).sort({ paidAt: -1 });
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
+    app.get("/payments/admin", async (req, res) => {
+      const email = req.query.email;
+
+      // if (email !== req.decoded_email) {
+      //   return res.status(403).send({ message: "Forbidden Access" });
+      // }
+
+      const resultAnalytics = await paymentsCollection
+        .aggregate([
+          {
+            $group: {
+              _id: "$paymentStatus",
+              totalAmount: { $sum: "$amount" },
+              count: { $count: {} },
+            },
+          },
+        ])
+        .toArray();
+      res.send(resultAnalytics);
+    });
+
+    app.get("/payments/total/:email", async (req, res) => {
+      const email = req.params.email;
+
+      const result = await paymentsCollection
+        .aggregate([
+          { $match: { tutorEmail: email } },
+          {
+            $group: {
+              _id: "$tutorEmail",
+              totalAmount: { $sum: "$amount" },
+              count: { $count: {} },
+            },
+          },
+        ])
+        .toArray();
+
+      res.send(result[0] || { totalAmount: 0, count: 0 });
+    });
+
+    app.get("/tuitions/approval-status/stats", async (req, res) => {
+      const pipeline = [
+        {
+          $group: {
+            _id: "$approvalStatus",
+            count: { $sum: 1 },
+          },
+        },
+      ];
+      const result = await tuitionsCollection.aggregate(pipeline).toArray();
       res.send(result);
     });
 
