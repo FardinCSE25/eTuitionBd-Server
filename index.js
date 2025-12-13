@@ -105,7 +105,7 @@ async function run() {
       res.send({ role: user?.role });
     });
 
-    app.get("/users", verifyFirebaseToken, async (req, res) => {
+    app.get("/users", async (req, res) => {
       const { email } = req.query;
       const query = {};
       if (email) {
@@ -130,7 +130,7 @@ async function run() {
     });
 
     app.patch("/users", verifyFirebaseToken, async (req, res) => {
-      const { name, photo } = req.body;
+      const { name, photoURL } = req.body;
       const { email } = req.query;
       const query = {};
       if (email) {
@@ -140,7 +140,7 @@ async function run() {
       const updatedUserData = {
         $set: {
           displayName: name,
-          photoURL: photo,
+          photoURL: photoURL,
         },
       };
 
@@ -440,22 +440,29 @@ async function run() {
     });
 
     // ! for approval of specific tuition from admin
-    app.patch("/tuitions/:id", verifyFirebaseToken, async (req, res) => {
-      const status = req.body.status;
-      const id = req.params.id;
-      const query = { _id: new ObjectId(id) };
+    app.patch(
+      "/tuitions/:id",
+      verifyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        const status = req.body.status;
+        const { email } = req.query;
+        const id = req.params.id;
 
-      if (email !== req.decoded_email) {
-        return res.status(403).send({ message: "Forbidden Access" });
+        const query = { _id: new ObjectId(id) };
+
+        if (email !== req.decoded_email) {
+          return res.status(403).send({ message: "Forbidden Access" });
+        }
+        const updatedDoc = {
+          $set: {
+            status: status,
+          },
+        };
+        const result = await tuitionsCollection.updateOne(query, updatedDoc);
+        res.send(result);
       }
-      const updatedDoc = {
-        $set: {
-          status: status,
-        },
-      };
-      const result = await tuitionsCollection.updateOne(query, updatedDoc);
-      res.send(result);
-    });
+    );
 
     app.delete("/tuitions/:id", verifyFirebaseToken, async (req, res) => {
       const id = req.params.id;
@@ -596,20 +603,25 @@ async function run() {
       }
     });
 
-    app.get("/all-payments", verifyFirebaseToken, async (req, res) => {
-      const { email } = req.query;
-      const query = {};
+    app.get(
+      "/all-payments",
+      verifyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        const { email } = req.query;
+        const query = {};
 
-      if (email !== req.decoded_email) {
-        return res.status(403).send({ message: "Forbidden Access" });
+        if (email !== req.decoded_email) {
+          return res.status(403).send({ message: "Forbidden Access" });
+        }
+        const cursor = paymentsCollection.find(query).sort({ paidAt: -1 });
+        const result = await cursor.toArray();
+        res.send(result);
       }
-      const cursor = paymentsCollection.find(query).sort({ paidAt: -1 });
-      const result = await cursor.toArray();
-      res.send(result);
-    });
+    );
 
     // ! for showing the payment history to the student
-    app.get("/payments", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+    app.get("/payments", verifyFirebaseToken, async (req, res) => {
       const email = req.query.email;
       const query = {};
       if (email) {
