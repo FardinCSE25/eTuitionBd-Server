@@ -154,7 +154,6 @@ async function run() {
     app.patch("/users/:id/role", verifyFirebaseToken, async (req, res) => {
       const id = req.params.id;
       const roleInfo = req.body;
-      console.log("Received Body:", roleInfo);
       const query = { _id: new ObjectId(id) };
       const updatedData = {
         $set: {
@@ -224,11 +223,10 @@ async function run() {
         query.studentEmail = email;
         query.status = status;
       }
-      console.log(email);
 
-      // if (email !== req.decoded_email) {
-      //   return res.status(403).send({ message: "Forbidden Access" });
-      // }
+      if (email !== req.decoded_email) {
+        return res.status(403).send({ message: "Forbidden Access" });
+      }
       const cursor = tuitionsCollection.find(query).sort({ created_at: -1 });
       const result = await cursor.toArray();
       res.send(result);
@@ -263,6 +261,14 @@ async function run() {
         .find(query)
         .sort({ applied_at: -1 })
         .toArray();
+      res.send(result);
+    });
+
+    app.get("/tuitions/:id/tutor", async (req, res) => {
+      const id = req.params.id;
+      const { email } = req.query;
+      const query = { tutorEmail: email, _id: new ObjectId(id) };
+      const result = await tuitionsCollection.find(query).toArray();
       res.send(result);
     });
 
@@ -448,7 +454,6 @@ async function run() {
     app.patch("/payment-success", async (req, res) => {
       const sessionId = req.query.session_id;
       const session = await stripe.checkout.sessions.retrieve(sessionId);
-      console.log(session);
 
       const transactionId = session.payment_intent;
       const query = { transactionId: transactionId };
@@ -546,7 +551,6 @@ async function run() {
         return res.status(403).send({ message: "Forbidden Access" });
       }
 
-      res.send(result[0] || { totalAmount: 0, count: 0 });
       const cursor = paymentsCollection.find(query).sort({ paidAt: -1 });
       const result = await cursor.toArray();
       res.send(result);
