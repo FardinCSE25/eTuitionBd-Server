@@ -178,7 +178,17 @@ async function run() {
         ];
       }
 
-      const count = await tuitionsCollection.countDocuments();
+      const pipeline = [
+        { $match: { status: "Approved" } },
+        {
+          $group: {
+            _id: "$status",
+            count: { $sum: 1 },
+          },
+        },
+      ];
+
+      const count = await tuitionsCollection.aggregate(pipeline).toArray();
       const cursor = tuitionsCollection
         .find(query)
         .limit(Number(limit))
@@ -559,9 +569,9 @@ async function run() {
     app.get("/payments/admin", async (req, res) => {
       const email = req.query.email;
 
-      // if (email !== req.decoded_email) {
-      //   return res.status(403).send({ message: "Forbidden Access" });
-      // }
+      if (email !== req.decoded_email) {
+        return res.status(403).send({ message: "Forbidden Access" });
+      }
 
       const resultAnalytics = await paymentsCollection
         .aggregate([
